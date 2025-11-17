@@ -11,6 +11,9 @@ import YouTubeAudioManager from './audio/YouTubeAudioManager';
 import VoiceAssistant from './voice/VoiceAssistant';
 import ConversationDisplay from './ui/ConversationDisplay';
 import PbitDisplay from './ui/PbitDisplay';
+import PbitSonifier from './audio/PbitSonifier';
+import Navbar from './ui/Navbar';
+import WhitepaperView from './ui/WhitepaperView';
 import Stats from 'stats.js';
 // Logo removed - no longer needed
 // import LogoDisplay from './ui/LogoDisplay';
@@ -89,6 +92,12 @@ let voiceAssistant = null;
 let conversationDisplay = null;
 /** @type {PbitDisplay | null} */
 let pbitDisplay = null;
+/** @type {PbitSonifier | null} */
+let pbitSonifier = null;
+/** @type {Navbar | null} */
+let navbar = null;
+/** @type {WhitepaperView | null} */
+let whitepaperView = null;
 /** @type {Stats | null} */
 let stats = null;
 // Logo removed - no longer needed
@@ -252,6 +261,43 @@ function init() {
             } else {
                 stopVoiceAssistant();
             }
+        },
+        /** Toggles pbit sonifier on/off */
+        onPbitSonifierToggleRequest: (enable) => {
+            if (pbitSonifier) {
+                if (enable) {
+                    if (!pbitSonifier.isInitialized) {
+                        // Try to initialize if not already done
+                        const initSonifier = async () => {
+                            if (sceneManager && sceneManager.thermodynamicVisualizer) {
+                                const pbitCount = sceneManager.thermodynamicVisualizer.pbitCount || 20;
+                                try {
+                                    await pbitSonifier.initialize(pbitCount);
+                                    pbitSonifier.enable();
+                                    if (guiManager) guiManager.setPbitSonifierActive(true);
+                                    console.log('[Main] PbitSonifier enabled');
+                                } catch (error) {
+                                    console.error('[Main] Failed to initialize PbitSonifier:', error);
+                                    alert('Failed to initialize audio synthesis. Please interact with the page first.');
+                                    if (guiManager) guiManager.setPbitSonifierActive(false);
+                                }
+                            }
+                        };
+                        initSonifier();
+                    } else {
+                        pbitSonifier.enable();
+                        if (guiManager) guiManager.setPbitSonifierActive(true);
+                        console.log('[Main] PbitSonifier enabled');
+                    }
+                } else {
+                    pbitSonifier.disable();
+                    if (guiManager) guiManager.setPbitSonifierActive(false);
+                    console.log('[Main] PbitSonifier disabled');
+                }
+            } else {
+                console.warn('[Main] PbitSonifier not initialized');
+                if (guiManager) guiManager.setPbitSonifierActive(false);
+            }
         }
     };
     // Create the GUI, passing the initial parameters and the callbacks
@@ -278,6 +324,56 @@ function init() {
     pbitDisplay = new PbitDisplay();
     console.log('✅ PbitDisplay initialized');
     
+    // 5g. Initialize Navbar
+    navbar = new Navbar();
+    navbar.setOnPageChange((page) => {
+        handlePageChange(page);
+    });
+    console.log('✅ Navbar initialized');
+    
+    // 5h. Initialize Whitepaper View
+    whitepaperView = new WhitepaperView();
+    console.log('✅ WhitepaperView initialized');
+    
+    // 5f. Initialize Pbit Sonifier (audio synthesis from pbit states)
+    // Initialize after user interaction to satisfy browser audio context requirements
+    const initSonifier = async () => {
+        if (sceneManager && sceneManager.thermodynamicVisualizer) {
+            const pbitCount = sceneManager.thermodynamicVisualizer.pbitCount || 20;
+            pbitSonifier = new PbitSonifier({
+                baseFrequency: 261.63, // C4
+                scale: 'major_pentatonic',
+                masterVolume: 0.03, // Lower volume to avoid overwhelming
+                smoothingTime: 0.1
+            });
+            
+            try {
+                await pbitSonifier.initialize(pbitCount);
+                // Enable by default (can be toggled via GUI)
+                pbitSonifier.enable();
+                console.log('✅ PbitSonifier initialized and enabled');
+            } catch (error) {
+                console.warn('⚠️ PbitSonifier initialization failed:', error);
+                console.warn('   (Audio context requires user interaction - will retry on first click)');
+            }
+        }
+    };
+    
+    // Try to initialize immediately, but also set up click handler for browser security
+    initSonifier();
+    
+    // Initialize on first user interaction (browser security requirement)
+    const initSonifierOnInteraction = async () => {
+        if (!pbitSonifier || !pbitSonifier.isInitialized) {
+            await initSonifier();
+        }
+        // Remove listener after first use
+        document.removeEventListener('click', initSonifierOnInteraction);
+        document.removeEventListener('touchstart', initSonifierOnInteraction);
+    };
+    document.addEventListener('click', initSonifierOnInteraction, { once: true });
+    document.addEventListener('touchstart', initSonifierOnInteraction, { once: true });
+    
     // 5d. Initialize Performance Stats Monitor
     stats = new Stats();
     stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
@@ -290,6 +386,13 @@ function init() {
     `;
     document.body.appendChild(stats.dom);
     console.log('✅ Stats.js initialized');
+    
+    // Hide loading screen - initialization complete
+    updateLoadingText('Ready!');
+    setTimeout(() => {
+        hideLoadingScreen();
+        console.log('✅ Application ready');
+    }, 500); // Reduced delay for faster startup
     
     // 5c. Initialize Voice Assistant (if API keys are available)
     if (CLAUDE_API_KEY || OPENAI_API_KEY || ELEVENLABS_API_KEY) {
@@ -336,16 +439,7 @@ function init() {
         console.warn('OpenAI or ElevenLabs API keys not provided. Voice assistant disabled.');
     }
     
-    // 5a. Hide loading screen and auto-start camera/mic
-    updateLoadingText('Ready!');
-    
-    // Hide loading screen after a brief moment
-    setTimeout(() => {
-        hideLoadingScreen();
-        console.log('✅ Application ready');
-    }, 500);
-    
-    // Auto-start camera and microphone after page is ready
+    // 5a. Auto-start camera and microphone after page is ready
     // This allows the page to fully load and increases success rate
     console.log('Scheduling auto-start for camera and microphone...');
     
@@ -514,6 +608,11 @@ function startAnimationLoop() {
                 const energy = sceneManager.thermodynamicVisualizer.getEnergy();
                 const temperature = sceneManager.thermodynamicVisualizer.temperature;
                 pbitDisplay.update(pbitStats, energy, temperature);
+                
+                // Update pbit sonifier (audio synthesis from pbit states)
+                if (pbitSonifier && pbitSonifier.isInitialized && pbitSonifier.isEnabled) {
+                    pbitSonifier.update(pbitStats.states, pbitStats.probabilities);
+                }
             }
         }
         // AudioManager might have internal updates if needed (e.g., smoothing audio data)
@@ -679,6 +778,60 @@ function stopVoiceAssistant() {
         voiceAssistant.stopListening();
         if (guiManager) guiManager.setVoiceAssistantActive(false);
         console.log('[Main] Voice assistant stopped.');
+    }
+}
+
+/**
+ * Handles page navigation changes.
+ * @param {string} page - Page identifier ('visualization' or 'whitepaper')
+ */
+function handlePageChange(page) {
+    if (page === 'whitepaper') {
+        // Show whitepaper, hide visualization
+        if (whitepaperView) whitepaperView.show();
+        if (sceneManager && sceneManager.getRenderer()) {
+            sceneManager.getRenderer().domElement.style.display = 'none';
+        }
+        // Hide UI elements
+        if (pbitDisplay && pbitDisplay.displayElement) {
+            pbitDisplay.displayElement.style.display = 'none';
+        }
+        if (conversationDisplay && conversationDisplay.displayElement) {
+            conversationDisplay.displayElement.style.display = 'none';
+        }
+        if (moodDisplay && moodDisplay.displayElement) {
+            moodDisplay.displayElement.style.display = 'none';
+        }
+        if (guiManager && guiManager.gui) {
+            guiManager.gui.domElement.style.display = 'none';
+        }
+        if (stats && stats.dom) {
+            stats.dom.style.display = 'none';
+        }
+        document.body.classList.add('whitepaper-page');
+    } else {
+        // Show visualization, hide whitepaper
+        if (whitepaperView) whitepaperView.hide();
+        if (sceneManager && sceneManager.getRenderer()) {
+            sceneManager.getRenderer().domElement.style.display = 'block';
+        }
+        // Show UI elements
+        if (pbitDisplay && pbitDisplay.displayElement) {
+            pbitDisplay.displayElement.style.display = 'block';
+        }
+        if (conversationDisplay && conversationDisplay.displayElement) {
+            conversationDisplay.displayElement.style.display = 'block';
+        }
+        if (moodDisplay && moodDisplay.displayElement) {
+            moodDisplay.displayElement.style.display = 'block';
+        }
+        if (guiManager && guiManager.gui) {
+            guiManager.gui.domElement.style.display = 'block';
+        }
+        if (stats && stats.dom) {
+            stats.dom.style.display = 'block';
+        }
+        document.body.classList.remove('whitepaper-page');
     }
 }
 

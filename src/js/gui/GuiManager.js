@@ -1,4 +1,5 @@
 import { GUI } from 'lil-gui';
+import MathTooltip from '../ui/MathTooltip';
 
 /**
  * Manages the dat.gui interface for controlling visual parameters.
@@ -36,6 +37,11 @@ export default class GuiManager {
         this.cameraActive = false;
         /** @type {boolean} Track voice assistant state */
         this.voiceAssistantActive = false;
+        /** @type {boolean} Track pbit sonifier state */
+        this.pbitSonifierActive = false;
+        
+        /** @type {MathTooltip} Tooltip system for mathematical explanations */
+        this.tooltip = new MathTooltip();
 
         this._setupColorControls();
         this._setupBloomControls();
@@ -44,9 +50,37 @@ export default class GuiManager {
         this._setupMicInputControl();
         this._setupCameraInputControl();
         this._setupVoiceAssistantControl();
+        this._setupPbitSonifierControl();
+        
+        // Add tooltips to GUI controls after a short delay (to ensure DOM is ready)
+        setTimeout(() => this._addGUITooltips(), 100);
         
         // Collapse the GUI on startup
         this.gui.close();
+    }
+    
+    /**
+     * Adds mathematical tooltips to GUI controls.
+     * @private
+     */
+    _addGUITooltips() {
+        // Find GUI DOM elements and add tooltips
+        const guiElement = this.gui.domElement;
+        if (!guiElement) return;
+        
+        // Add tooltip to visual effect dropdown
+        const effectSelect = guiElement.querySelector('select');
+        if (effectSelect) {
+            this.tooltip.attach(effectSelect, {
+                title: 'Visual Effect Selection',
+                explanation: 'Choose between different visualization modes:\n• Icosahedron: Shows TSU Gibbs sampling graph with energy-based model\n• Particles: Particle system visualization\n• Code Rain: Mathematical equation rain effect',
+                visualization: 'Each effect demonstrates different aspects of thermodynamic sampling.'
+            });
+        }
+        
+        // Note: lil-gui doesn't expose individual control DOM elements easily,
+        // so we'll add tooltips via title attributes or custom overlays
+        // For now, the main tooltips are in PbitDisplay
     }
 
     /**
@@ -195,6 +229,25 @@ export default class GuiManager {
         // Add the button to the main GUI
         this.voiceAssistantButton = this.gui.add(voiceTrigger, 'toggleVoice').name('🎙️ Voice Assistant: OFF');
     }
+    
+    /**
+     * Sets up the control for pbit sonifier (audio synthesis from pbit states).
+     * @private
+     */
+    _setupPbitSonifierControl() {
+        const sonifierTrigger = {
+            toggleSonifier: () => {
+                if (this.callbacks.onPbitSonifierToggleRequest) {
+                    this.pbitSonifierActive = !this.pbitSonifierActive;
+                    console.log(`Pbit sonifier toggle clicked, new state: ${this.pbitSonifierActive ? 'ON' : 'OFF'}`);
+                    this.callbacks.onPbitSonifierToggleRequest(this.pbitSonifierActive);
+                    this.updatePbitSonifierButtonText();
+                }
+            }
+        };
+        this.pbitSonifierActive = false; // Track sonifier state
+        this.pbitSonifierButton = this.gui.add(sonifierTrigger, 'toggleSonifier').name('🎵 Pbit Sonifier: OFF');
+    }
 
     /**
      * Updates a slider value programmatically without triggering callbacks.
@@ -326,6 +379,24 @@ export default class GuiManager {
     setVoiceAssistantActive(active) {
         this.voiceAssistantActive = active;
         this.updateVoiceAssistantButtonText();
+    }
+    
+    /**
+     * Updates the pbit sonifier button text.
+     */
+    updatePbitSonifierButtonText() {
+        if (this.pbitSonifierButton) {
+            this.pbitSonifierButton.name(this.pbitSonifierActive ? '🎵 Pbit Sonifier: ON' : '🎵 Pbit Sonifier: OFF');
+        }
+    }
+    
+    /**
+     * Sets the pbit sonifier active state.
+     * @param {boolean} active - Whether the sonifier is active
+     */
+    setPbitSonifierActive(active) {
+        this.pbitSonifierActive = active;
+        this.updatePbitSonifierButtonText();
     }
     
     // Optional: Method to hide/show GUI

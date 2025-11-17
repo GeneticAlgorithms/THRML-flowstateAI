@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import GibbsSampler from './GibbsSampler';
+import ThrmlSampler from './ThrmlSampler';
 
 /**
  * Thermodynamic Model Visualizer
@@ -21,6 +22,8 @@ export default class ThermodynamicVisualizer {
         // Energy-based model parameters
         this.temperature = options.temperature || 1.0;
         this.energyScale = options.energyScale || 1.0;
+        this.useThrml = options.useThrml || false; // Use Python thrml API if available
+        this.thrmlApiUrl = options.thrmlApiUrl || 'http://localhost:5000';
         
         // Gibbs sampling engine
         this.gibbsSampler = new GibbsSampler({
@@ -29,6 +32,25 @@ export default class ThermodynamicVisualizer {
         });
         this.gibbsStepCounter = 0;
         this.gibbsUpdateInterval = 2; // Update every N frames
+        
+        // THRML sampler (optional, for Python thrml integration)
+        this.thrmlSampler = null;
+        if (this.useThrml) {
+            this.thrmlSampler = new ThrmlSampler({
+                apiUrl: this.thrmlApiUrl,
+                nNodes: 16,
+                beta: 1.0 / this.temperature
+            });
+            // Check if API is available
+            this.thrmlSampler.checkHealth().then(available => {
+                if (available) {
+                    console.log('[ThermodynamicVisualizer] THRML API connected');
+                } else {
+                    console.warn('[ThermodynamicVisualizer] THRML API not available, using JavaScript GibbsSampler');
+                    this.useThrml = false;
+                }
+            });
+        }
         
         // Visual elements
         this.pbitSpheres = [];
@@ -334,15 +356,39 @@ export default class ThermodynamicVisualizer {
     
     /**
      * Sets all pbit probabilities based on audio frequency (energy-based control).
+     * Uses Gibbs sampler probabilities when available for more accurate representation.
      * @param {number} frequency - Audio frequency (0-1 normalized)
      */
     setPbitsFromAudio(frequency) {
-        // Map audio frequency to probability distribution
-        for (let i = 0; i < this.pbitCount; i++) {
-            // Create a wave pattern based on frequency
-            const phase = (i / this.pbitCount) * Math.PI * 2;
-            const probability = 0.3 + frequency * 0.4 + Math.sin(phase + Date.now() * 0.001) * 0.2;
-            this.pbitProbabilities[i] = Math.max(0, Math.min(1, probability));
+        // Normalize frequency to 0-1 range (clamp to prevent > 1.0)
+        const normalizedFreq = Math.max(0, Math.min(1, frequency || 0));
+        
+        // Use Gibbs sampler probabilities if available (more accurate)
+        if (this.gibbsSampler && this.gibbsSampler.states && this.gibbsSampler.states.length > 0) {
+            // Calculate actual probabilities from Gibbs sampler
+            for (let i = 0; i < Math.min(this.pbitCount, this.gibbsSampler.states.length); i++) {
+                // Compute effective bias and convert to probability using sigmoid
+                const gamma = this.gibbsSampler.computeEffectiveBias(i);
+                const prob = this.gibbsSampler.sigmoid(gamma);
+                // Clamp to valid range
+                this.pbitProbabilities[i] = Math.max(0.01, Math.min(0.99, prob));
+            }
+            
+            // For remaining pbits beyond Gibbs sampler nodes, use audio-based probabilities
+            for (let i = this.gibbsSampler.states.length; i < this.pbitCount; i++) {
+                const phase = (i / this.pbitCount) * Math.PI * 2;
+                // More conservative probability range: 0.2 to 0.8 (not 0.3 to 0.9)
+                const probability = 0.2 + normalizedFreq * 0.5 + Math.sin(phase + Date.now() * 0.001) * 0.1;
+                this.pbitProbabilities[i] = Math.max(0.01, Math.min(0.99, probability));
+            }
+        } else {
+            // Fallback: use audio-based probabilities with conservative range
+            for (let i = 0; i < this.pbitCount; i++) {
+                const phase = (i / this.pbitCount) * Math.PI * 2;
+                // More conservative: 0.2 to 0.8 instead of 0.3 to 0.9
+                const probability = 0.2 + normalizedFreq * 0.5 + Math.sin(phase + Date.now() * 0.001) * 0.1;
+                this.pbitProbabilities[i] = Math.max(0.01, Math.min(0.99, probability));
+            }
         }
     }
     
@@ -371,6 +417,17 @@ export default class ThermodynamicVisualizer {
             // Pulse animation
             const pulse = Math.sin(Date.now() * 0.005 + i) * 0.1 + 1.0;
             node.scale.multiplyScalar(pulse);
+            
+            // Store math info in userData for potential tooltip display
+            const gamma = this.gibbsSampler.computeEffectiveBias(i);
+            const prob = this.gibbsSampler.sigmoid(gamma);
+            node.userData.mathInfo = {
+                state: state,
+                gamma: gamma.toFixed(2),
+                probability: prob.toFixed(3),
+                formula: `γ${i} = 2(b${i} + Σw${i}ⱼxⱼ)`,
+                probFormula: `P(x${i}=+1) = σ(γ${i}) = 1/(1+e^(-γ${i}))`
+            };
         }
         
         // Update edge opacity based on weight strength
@@ -402,8 +459,27 @@ export default class ThermodynamicVisualizer {
         // Perform Gibbs sampling steps
         this.gibbsStepCounter++;
         if (this.gibbsStepCounter >= this.gibbsUpdateInterval) {
-            this.gibbsSampler.gibbsStep();
-            this.updateGraphVisualization();
+            // Use THRML API if available, otherwise use JavaScript GibbsSampler
+            if (this.useThrml && this.thrmlSampler) {
+                this.thrmlSampler.gibbsStep({
+                    beta: 1.0 / this.temperature,
+                    randomKey: Math.floor(Date.now() / 1000)
+                }).then(sample => {
+                    if (sample) {
+                        // Update states from thrml sample
+                        const states = sample.map(s => s === 1 ? 1 : -1);
+                        this.gibbsSampler.states = states;
+                        this.updateGraphVisualization();
+                    }
+                }).catch(error => {
+                    console.warn('[ThermodynamicVisualizer] THRML sampling failed, falling back to JS:', error);
+                    this.gibbsSampler.gibbsStep();
+                    this.updateGraphVisualization();
+                });
+            } else {
+                this.gibbsSampler.gibbsStep();
+                this.updateGraphVisualization();
+            }
             this.gibbsStepCounter = 0;
         }
         
@@ -456,11 +532,19 @@ export default class ThermodynamicVisualizer {
         const activeCount = this.pbitStates.filter(s => s === 1).length;
         const avgProbability = this.pbitProbabilities.reduce((a, b) => a + b, 0) / this.pbitCount;
         
+        // Calculate variability (standard deviation of probabilities)
+        const variance = this.pbitProbabilities.reduce((sum, p) => {
+            const diff = p - avgProbability;
+            return sum + diff * diff;
+        }, 0) / this.pbitCount;
+        const variability = Math.sqrt(variance);
+        
         return {
             total: this.pbitCount,
             active: activeCount,
             inactive: this.pbitCount - activeCount,
-            averageProbability: avgProbability,
+            averageProbability: avgProbability, // Keep for internal use
+            variability: variability, // Standard deviation of probabilities
             states: [...this.pbitStates],
             probabilities: [...this.pbitProbabilities]
         };

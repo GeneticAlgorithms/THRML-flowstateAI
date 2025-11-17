@@ -27,3 +27,15 @@ Thumbs.db
 npm-debug.log*
 
 .vercel
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+thrml_api/__pycache__/
+thrml_api/*.pyc

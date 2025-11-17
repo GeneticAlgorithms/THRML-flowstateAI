@@ -1,5 +1,4 @@
 {
-  "name": "flowstate-ai",
   "builds": [
     {
       "src": "package.json",
@@ -7,8 +6,18 @@
       "config": { "distDir": "dist" }
     }
   ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "src": "/(.*)", "dest": "/$1" }
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" }
+  ],
+  "headers": [
+    {
+      "source": "/Flowstate_WhitePaper.pdf",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/pdf"
+        }
+      ]
+    }
   ]
-} 
+}
