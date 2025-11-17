@@ -2,6 +2,11 @@
 
 # Demo Link : https://flowstate-eav4sf1mf-legendary-cynosures-projects.vercel.app/
 
+# White Paper: https://github.com/GeneticAlgorithms/THRML-flowstateAI/blob/main/Flowstate_WhitePaper.pdf
+(explains how everything works in detail)
+
+
+
 ## Features
 
 * Real-time 3D visualization reacting to audio frequency.
