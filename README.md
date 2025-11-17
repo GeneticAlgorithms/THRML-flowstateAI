@@ -1,9 +1,6 @@
 ## FlowState AI
 
-## Team
-- Max Man Cheung 
-- Iana Lin
-- Alexander Le
+# Demo Link : https://flowstate-eav4sf1mf-legendary-cynosures-projects.vercel.app/
 
 ## Features
 
