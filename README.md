@@ -2,7 +2,7 @@
 
 # Demo Link : https://flowstate-eav4sf1mf-legendary-cynosures-projects.vercel.app/
 
-# White Paper: [[https://github.com/GeneticAlgorithms/THRML-flowstateAI/blob/main/Flowstate_WhitePaper.pdf](https://github.com/GeneticAlgorithms/THRML-flowstateAI/blob/main/Flowstate_Whitepaper.pdf)](https://github.com/GeneticAlgorithms/THRML-flowstateAI/blob/main/Flowstate_WhitePaper.pdf)
+# White Paper: [[https://github.com/GeneticAlgorithms/THRML-flowstateAI/blob/main/Flowstate_WhitePaper.pdf](https://github.com/GeneticAlgorithms/THRML-flowstateAI/blob/main/Flowstate_Whitepaper.pdf)]
 (explains how everything works in detail)
 
 
